@@ -1,7 +1,7 @@
 #ifndef _USER_H_
 #define _USER_H_
 
-// Cấu trúc Trie để map char* -> int (0..29)
+// 1. Cấu trúc Trie: Map chuỗi tag thành ID từ 0 -> 29
 struct TrieNode {
     int id;
     int child[26];
@@ -29,7 +29,7 @@ int get_tag_id_if_exists(const char* s) {
     return trie[u].id;
 }
 
-// Cấu trúc Vector tự tạo (Tối ưu Memory)
+// 2. Vector tự tạo: Quản lý bộ nhớ động siêu tốc
 struct IntVector {
     int* arr;
     int cap, sz;
@@ -45,15 +45,19 @@ struct IntVector {
     }
     void clear() {
         if (arr) delete[] arr;
-        arr = nullptr;
+        arr = 0; // Thay nullptr bằng 0 cho chuẩn C++98 (VS2012)
         cap = sz = 0;
     }
 };
 
-// Cấu trúc Heap tự tạo (Tối ưu Access Time)
+// 3. Min Heap: Lưu trữ theo giá Base Price
 struct HeapNode {
     long long base_price;
     int mId;
+    
+    // Tương thích VS2012: Constructor rõ ràng
+    HeapNode() { base_price = 0; mId = 0; }
+    HeapNode(long long bp, int id) { base_price = bp; mId = id; }
 };
 
 struct MinHeap {
@@ -67,7 +71,7 @@ struct MinHeap {
             delete[] arr;
             arr = new_arr;
         }
-        arr[sz++] = {bp, id};
+        arr[sz++] = HeapNode(bp, id);
         int cur = sz - 1;
         while (cur > 0) {
             int p = (cur - 1) / 2;
@@ -101,16 +105,17 @@ struct MinHeap {
     bool empty() { return sz == 0; }
     void clear() {
         if (arr) delete[] arr;
-        arr = nullptr;
+        arr = 0;
         cap = sz = 0;
     }
 };
 
-// Global Variables
+// 4. Global Variables & Trạng thái hệ thống
 long long tag_offset[35];
 bool product_deleted[1000005];
+int internal_id_counter; // ID ẩn tự sinh
 
-// Map: Mask -> Mask_ID
+// Bảng Băm (Hash Table) Map: Mask (Bit) -> Mask_ID (0, 1, 2...)
 struct HashNode {
     int mask, id, next;
 } hash_table[50005];
@@ -118,7 +123,7 @@ int head[65536], hash_cnt;
 int mask_of_id[50005];
 
 MinHeap heaps[50005];
-IntVector combo_list[27005]; // Lưu các mask_id thuộc cùng 1 tổ hợp 3 tag
+IntVector combo_list[27005];
 
 int get_mask_id(int mask) {
     int h = mask & 65535;
@@ -132,8 +137,8 @@ int get_mask_id(int mask) {
     head[h] = id;
     mask_of_id[id] = mask;
     
-    // Tạo mọi tổ hợp 3 tags từ mask hiện tại
-    int tags[5], t_cnt = 0;
+    // Khai triển tổ hợp chập 3 của các thẻ trong mask này
+    int tags[35], t_cnt = 0;
     for (int i = 0; i < 30; ++i) {
         if ((mask >> i) & 1) tags[t_cnt++] = i;
     }
@@ -148,13 +153,14 @@ int get_mask_id(int mask) {
     return id;
 }
 
-// API Functions
+// 5. Các hàm API chính
 void init(int n) {
     for (int i = 0; i <= trie_cnt; ++i) {
         for (int j = 0; j < 26; ++j) trie[i].child[j] = 0;
         trie[i].id = -1;
     }
     trie_cnt = tag_id_cnt = 0;
+    internal_id_counter = 0; // Reset biến đếm
     
     for (int i = 0; i < 65536; ++i) head[i] = -1;
     hash_cnt = 0;
@@ -163,12 +169,10 @@ void init(int n) {
     for (int i = 0; i < 27005; ++i) combo_list[i].clear();
     for (int i = 0; i < 35; ++i) tag_offset[i] = 0;
     
-    // Note: product_deleted tracking depends on the maximum mId. 
-    // Usually mId is bounded, resetting a large array here is safe.
-    for (int i = 0; i < 1000005; ++i) product_deleted[i] = false;
+    for (int i = 0; i < 100005; ++i) product_deleted[i] = false;
 }
 
-void addProduct(int mId, int mPrice, int tagNum, char tagName[][10]) {
+void addProduct(int mPrice, int tagNum, char tagName[][10]) {
     int mask = 0;
     for (int i = 0; i < tagNum; ++i) {
         int t = get_tag_id(tagName[i]);
@@ -183,8 +187,11 @@ void addProduct(int mId, int mPrice, int tagNum, char tagName[][10]) {
     long long base_price = mPrice - current_offset;
     int m_id = get_mask_id(mask);
     
-    heaps[m_id].push(base_price, mId);
-    product_deleted[mId] = false;
+    // Tự sinh ID cho việc quản lý Heap
+    int pId = internal_id_counter++; 
+    
+    heaps[m_id].push(base_price, pId);
+    product_deleted[pId] = false;
 }
 
 int buyProduct(char tag1[], char tag2[], char tag3[]) {
@@ -195,7 +202,7 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     
     if (t[0] == -1 || t[1] == -1 || t[2] == -1) return -1;
     
-    // Sắp xếp các tag ID để tính index đồng nhất
+    // Bubble sort nhanh 3 phần tử (để tính tổ hợp chung)
     for (int i = 0; i < 2; ++i) {
         for (int j = i + 1; j < 3; ++j) {
             if (t[i] > t[j]) { int tmp = t[i]; t[i] = t[j]; t[j] = tmp; }
@@ -206,11 +213,10 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     long long min_price = -1;
     int best_mId = -1;
     
-    // Duyệt qua tất cả các Mask có chứa 3 thẻ này
     for (int i = 0; i < combo_list[combo].sz; ++i) {
         int m_id = combo_list[combo].arr[i];
         
-        // Loại bỏ rác (các product đã bị mua) trên đỉnh Heap
+        // Lazy Deletion: Xoá các Node rác đã bị bán khỏi đỉnh Heap
         while (!heaps[m_id].empty() && product_deleted[heaps[m_id].top().mId]) {
             heaps[m_id].pop();
         }
@@ -219,7 +225,6 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
             long long bp = heaps[m_id].top().base_price;
             int p_mId = heaps[m_id].top().mId;
             
-            // Tính toán giá thực tế hiện tại
             long long curr_price = bp;
             int mask = mask_of_id[m_id];
             for (int bit = 0; bit < 30; ++bit) {
@@ -236,9 +241,10 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     
     if (best_mId != -1) {
         product_deleted[best_mId] = true;
+        return (int)min_price; // Ép kiểu về int trả về giá trị sản phẩm
     }
     
-    return best_mId;
+    return -1;
 }
 
 void adjustPrice(char tag1[], int changePrice) {
