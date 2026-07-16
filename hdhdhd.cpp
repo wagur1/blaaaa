@@ -7,12 +7,11 @@ struct TrieNode {
 } trie[1005];
 int trie_cnt, tag_id_cnt;
 
-// XỬ LÝ RÁC: Khóa cứng tối đa 10 ký tự, dừng ngay lập tức khi gặp '\0'
 int get_tag_id(const char* s) {
     int u = 0;
     for (int i = 0; i < 10 && s[i] != '\0'; ++i) {
         int c = s[i] - 'a';
-        if (c < 0 || c > 25) continue; // Bỏ qua ký tự không hợp lệ nếu có
+        if (c < 0 || c > 25) continue; 
         if (!trie[u].child[c]) trie[u].child[c] = ++trie_cnt;
         u = trie[u].child[c];
     }
@@ -31,7 +30,6 @@ int get_tag_id_if_exists(const char* s) {
     return trie[u].id;
 }
 
-// Bảng băm cho Combo (Mở rộng kích thước để chứa Base-40)
 int combo_head[65005];
 int combo_next[5000005]; 
 int combo_val[5000005];
@@ -102,17 +100,17 @@ struct MinHeap {
     bool empty() { return sz == 0; }
 };
 
-long long tag_offset[45]; // Mở rộng đề phòng bẫy số lượng
+long long tag_offset[45]; 
 bool product_deleted[1000005];
 int internal_id_counter;
 
 struct HashNode {
-    long long mask; // TRÁNH TRÀN BIT: Dùng long long
+    long long mask; 
     int id, next;
 } hash_table[180005];
 int head[65536], hash_cnt;
 
-int mask_tags[180005][10]; // Mở rộng chiều thứ 2 lên 10
+int mask_tags[180005][10]; 
 int mask_tag_cnt[180005];
 MinHeap heaps[180005];
 
@@ -128,7 +126,7 @@ int get_mask_id(long long mask) {
     head[h] = id;
     
     int tags[45], t_cnt = 0;
-    for (int i = 0; i < 40; ++i) { // Quét rộng ra 40 bit
+    for (int i = 0; i < 40; ++i) { 
         if ((mask >> i) & 1LL) tags[t_cnt++] = i;
     }
     
@@ -138,7 +136,6 @@ int get_mask_id(long long mask) {
     for (int i = 0; i < t_cnt - 2; ++i) {
         for (int j = i + 1; j < t_cnt - 1; ++j) {
             for (int k = j + 1; k < t_cnt; ++k) {
-                // HỆ CƠ SỐ 40: Tránh đụng độ tuyệt đối
                 int combo = tags[i] * 1600 + tags[j] * 40 + tags[k];
                 combo_val[++combo_cnt] = id;
                 combo_next[combo_cnt] = combo_head[combo];
@@ -170,10 +167,10 @@ void init(int n) {
 }
 
 void addProduct(int mPrice, int tagNum, char tagName[][10]) {
-    long long mask = 0; // Tránh tràn số dương
+    long long mask = 0; 
     for (int i = 0; i < tagNum; ++i) {
         int t = get_tag_id(tagName[i]);
-        mask |= (1LL << t); // Dịch bit hệ 64-bit
+        mask |= (1LL << t); 
     }
     
     long long current_offset = 0;
@@ -200,7 +197,6 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     if (t[0] > t[2]) { int tmp = t[0]; t[0] = t[2]; t[2] = tmp; }
     if (t[1] > t[2]) { int tmp = t[1]; t[1] = t[2]; t[2] = tmp; }
     
-    // Đồng bộ với Hệ cơ số 40
     int combo = t[0] * 1600 + t[1] * 40 + t[2];
     long long min_price = -1;
     int best_mId = -1;
@@ -238,10 +234,9 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
 }
 
 void adjustPrice(char tag1[], int changePrice) {
-    int t1 = get_tag_id_if_exists(tag1);
-    if (t1 != -1) {
-        tag_offset[t1] += changePrice;
-    }
+    // SỬA LỖI TRỌNG TÂM: Sử dụng get_tag_id thay vì get_tag_id_if_exists
+    int t1 = get_tag_id(tag1);
+    tag_offset[t1] += changePrice;
 }
 
 #endif
