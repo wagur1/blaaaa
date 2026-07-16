@@ -1,7 +1,7 @@
 #ifndef _USER_H_
 #define _USER_H_
 
-// 1. Cấu trúc Trie: Map chuỗi tag thành ID từ 0 -> 29
+// 1. Cấu trúc Trie
 struct TrieNode {
     int id;
     int child[26];
@@ -29,49 +29,42 @@ int get_tag_id_if_exists(const char* s) {
     return trie[u].id;
 }
 
-// 2. Vector tự tạo: Quản lý bộ nhớ động siêu tốc
-struct IntVector {
-    int* arr;
-    int cap, sz;
-    void push(int val) {
-        if (sz == cap) {
-            cap = (cap == 0) ? 4 : cap * 2;
-            int* new_arr = new int[cap];
-            for (int i = 0; i < sz; ++i) new_arr[i] = arr[i];
-            delete[] arr;
-            arr = new_arr;
-        }
-        arr[sz++] = val;
-    }
-    void clear() {
-        if (arr) delete[] arr;
-        arr = 0; // Thay nullptr bằng 0 cho chuẩn C++98 (VS2012)
-        cap = sz = 0;
-    }
-};
+// 2. Danh sách liên kết tĩnh (Thay thế Vector) - Tốc độ O(1), 0 tốn cấp phát
+int combo_head[27005];
+int combo_next[500005];
+int combo_val[500005];
+int combo_cnt;
 
-// 3. Min Heap: Lưu trữ theo giá Base Price
+// 3. Memory Pool cho toàn bộ Heap - Không dùng lệnh "new"
 struct HeapNode {
     long long base_price;
     int mId;
-    
-    // Tương thích VS2012: Constructor rõ ràng
-    HeapNode() { base_price = 0; mId = 0; }
-    HeapNode(long long bp, int id) { base_price = bp; mId = id; }
 };
+HeapNode heap_pool[2000005]; // Cấp sẵn 2 triệu ô nhớ
+int heap_pool_cnt;
 
 struct MinHeap {
     HeapNode* arr;
     int cap, sz;
+    
+    void init() { arr = 0; cap = sz = 0; }
+    
     void push(long long bp, int id) {
         if (sz == cap) {
             cap = (cap == 0) ? 4 : cap * 2;
-            HeapNode* new_arr = new HeapNode[cap];
-            for (int i = 0; i < sz; ++i) new_arr[i] = arr[i];
-            delete[] arr;
+            HeapNode* new_arr = &heap_pool[heap_pool_cnt];
+            heap_pool_cnt += cap; // Chỉ trỏ con trỏ lên, không tốn time cấp phát
+            
+            for (int i = 0; i < sz; ++i) {
+                new_arr[i].base_price = arr[i].base_price;
+                new_arr[i].mId = arr[i].mId;
+            }
             arr = new_arr;
         }
-        arr[sz++] = HeapNode(bp, id);
+        arr[sz].base_price = bp;
+        arr[sz].mId = id;
+        sz++;
+        
         int cur = sz - 1;
         while (cur > 0) {
             int p = (cur - 1) / 2;
@@ -82,9 +75,12 @@ struct MinHeap {
             } else break;
         }
     }
+    
     void pop() {
         if (sz == 0) return;
-        arr[0] = arr[--sz];
+        sz--;
+        if (sz == 0) return;
+        arr[0] = arr[sz];
         int cur = 0;
         while (true) {
             int l = cur * 2 + 1, r = cur * 2 + 2;
@@ -103,27 +99,22 @@ struct MinHeap {
     }
     HeapNode top() { return arr[0]; }
     bool empty() { return sz == 0; }
-    void clear() {
-        if (arr) delete[] arr;
-        arr = 0;
-        cap = sz = 0;
-    }
 };
 
-// 4. Global Variables & Trạng thái hệ thống
+// 4. Bảng Băm & Lưu trữ trạng thái hệ thống
 long long tag_offset[35];
 bool product_deleted[1000005];
-int internal_id_counter; // ID ẩn tự sinh
+int internal_id_counter;
 
-// Bảng Băm (Hash Table) Map: Mask (Bit) -> Mask_ID (0, 1, 2...)
 struct HashNode {
     int mask, id, next;
 } hash_table[50005];
 int head[65536], hash_cnt;
-int mask_of_id[50005];
 
+// TỐI ƯU CỰC HẠN: Lưu sẵn các tag của mỗi Mask thay vì duyệt 30 bit
+int mask_tags[50005][5];
+int mask_tag_cnt[50005];
 MinHeap heaps[50005];
-IntVector combo_list[27005];
 
 int get_mask_id(int mask) {
     int h = mask & 65535;
@@ -135,41 +126,54 @@ int get_mask_id(int mask) {
     hash_table[id].id = id;
     hash_table[id].next = head[h];
     head[h] = id;
-    mask_of_id[id] = mask;
     
-    // Khai triển tổ hợp chập 3 của các thẻ trong mask này
     int tags[35], t_cnt = 0;
     for (int i = 0; i < 30; ++i) {
         if ((mask >> i) & 1) tags[t_cnt++] = i;
     }
+    
+    // Lưu cấu hình tag để tính giá nhanh O(1) sau này
+    mask_tag_cnt[id] = t_cnt;
+    for (int i = 0; i < t_cnt; ++i) mask_tags[id][i] = tags[i];
+    
+    // Khai triển tổ hợp 3
     for (int i = 0; i < t_cnt - 2; ++i) {
         for (int j = i + 1; j < t_cnt - 1; ++j) {
             for (int k = j + 1; k < t_cnt; ++k) {
                 int combo = tags[i] * 900 + tags[j] * 30 + tags[k];
-                combo_list[combo].push(id);
+                // Add vào Linked List (O(1))
+                combo_val[++combo_cnt] = id;
+                combo_next[combo_cnt] = combo_head[combo];
+                combo_head[combo] = combo_cnt;
             }
         }
     }
     return id;
 }
 
-// 5. Các hàm API chính
+// 5. API Functions
 void init(int n) {
+    // TỐI ƯU: Chỉ reset phần ID đã dùng ở testcase trước, không lặp 1 triệu lần
+    for (int i = 0; i <= internal_id_counter; ++i) product_deleted[i] = false;
+    internal_id_counter = 0;
+    
     for (int i = 0; i <= trie_cnt; ++i) {
         for (int j = 0; j < 26; ++j) trie[i].child[j] = 0;
         trie[i].id = -1;
     }
     trie_cnt = tag_id_cnt = 0;
-    internal_id_counter = 0; // Reset biến đếm
     
     for (int i = 0; i < 65536; ++i) head[i] = -1;
     hash_cnt = 0;
     
-    for (int i = 0; i < 50005; ++i) heaps[i].clear();
-    for (int i = 0; i < 27005; ++i) combo_list[i].clear();
-    for (int i = 0; i < 35; ++i) tag_offset[i] = 0;
+    // TỐI ƯU: Reset Memory Pool cực nhanh
+    heap_pool_cnt = 0; 
+    for (int i = 0; i < 50005; ++i) heaps[i].init();
     
-    for (int i = 0; i < 100005; ++i) product_deleted[i] = false;
+    for (int i = 0; i < 27005; ++i) combo_head[i] = 0;
+    combo_cnt = 0;
+    
+    for (int i = 0; i < 35; ++i) tag_offset[i] = 0;
 }
 
 void addProduct(int mPrice, int tagNum, char tagName[][10]) {
@@ -187,11 +191,8 @@ void addProduct(int mPrice, int tagNum, char tagName[][10]) {
     long long base_price = mPrice - current_offset;
     int m_id = get_mask_id(mask);
     
-    // Tự sinh ID cho việc quản lý Heap
     int pId = internal_id_counter++; 
-    
     heaps[m_id].push(base_price, pId);
-    product_deleted[pId] = false;
 }
 
 int buyProduct(char tag1[], char tag2[], char tag3[]) {
@@ -202,21 +203,18 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     
     if (t[0] == -1 || t[1] == -1 || t[2] == -1) return -1;
     
-    // Bubble sort nhanh 3 phần tử (để tính tổ hợp chung)
-    for (int i = 0; i < 2; ++i) {
-        for (int j = i + 1; j < 3; ++j) {
-            if (t[i] > t[j]) { int tmp = t[i]; t[i] = t[j]; t[j] = tmp; }
-        }
-    }
+    if (t[0] > t[1]) { int tmp = t[0]; t[0] = t[1]; t[1] = tmp; }
+    if (t[0] > t[2]) { int tmp = t[0]; t[0] = t[2]; t[2] = tmp; }
+    if (t[1] > t[2]) { int tmp = t[1]; t[1] = t[2]; t[2] = tmp; }
     
     int combo = t[0] * 900 + t[1] * 30 + t[2];
     long long min_price = -1;
     int best_mId = -1;
     
-    for (int i = 0; i < combo_list[combo].sz; ++i) {
-        int m_id = combo_list[combo].arr[i];
+    // Duyệt danh sách liên kết siêu tốc
+    for (int i = combo_head[combo]; i != 0; i = combo_next[i]) {
+        int m_id = combo_val[i];
         
-        // Lazy Deletion: Xoá các Node rác đã bị bán khỏi đỉnh Heap
         while (!heaps[m_id].empty() && product_deleted[heaps[m_id].top().mId]) {
             heaps[m_id].pop();
         }
@@ -224,11 +222,11 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
         if (!heaps[m_id].empty()) {
             long long bp = heaps[m_id].top().base_price;
             int p_mId = heaps[m_id].top().mId;
-            
             long long curr_price = bp;
-            int mask = mask_of_id[m_id];
-            for (int bit = 0; bit < 30; ++bit) {
-                if ((mask >> bit) & 1) curr_price += tag_offset[bit];
+            
+            // TỐI ƯU: Chỉ lặp 3-5 lần lấy đúng tag đang có thay vì 30 lần quét Bit
+            for (int k = 0; k < mask_tag_cnt[m_id]; ++k) {
+                curr_price += tag_offset[mask_tags[m_id][k]];
             }
             
             if (min_price == -1 || curr_price < min_price || 
@@ -241,7 +239,7 @@ int buyProduct(char tag1[], char tag2[], char tag3[]) {
     
     if (best_mId != -1) {
         product_deleted[best_mId] = true;
-        return (int)min_price; // Ép kiểu về int trả về giá trị sản phẩm
+        return (int)min_price;
     }
     
     return -1;
